@@ -13,8 +13,6 @@
 <p align="center">
   <a href="https://github.com/Ranbo-codez/MetalMate/releases/latest/download/MetalMate.dmg"><b>Download for Mac</b></a>
   ·
-  <a href="https://ranbo-codez.github.io/MetalMate/">Website</a>
-  ·
   <a href="#build-it-yourself">Build from source</a>
 </p>
 
