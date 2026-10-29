@@ -1,0 +1,12 @@
+# Exact versions the released app is built from (packaging/build_app.sh).
+# Chosen so every bundled binary runs on macOS 12 or later: newer Qt for Python wheels need macOS 15+.
+PySide6-Essentials==6.9.3
+shiboken6==6.9.3
+numpy==2.5.4
+pillow==13.0.0
+mss==10.2.0
+pyobjc-core==12.2.2
+pyobjc-framework-Cocoa==12.2.2
+pyobjc-framework-Quartz==12.2.2
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.9

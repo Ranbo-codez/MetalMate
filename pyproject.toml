@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metalmate"
+dynamic = ["version"]
+description = "A screen-reading chess companion for macOS: follows the game on any board and shows the engine's best move."
+readme = "README.md"
+license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt", "licenses/*"]
+requires-python = ">=3.11"
+authors = [{ name = "Ranbir Dhall" }]
+keywords = ["chess", "stockfish", "uci", "macos", "computer-vision", "pyside6"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: Free for non-commercial use",
+    "Environment :: MacOS X :: Cocoa",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Games/Entertainment :: Board Games",
+]
+dependencies = [
+    "PySide6-Essentials>=6.7",
+    "mss>=9.0",
+    "numpy>=1.26",
+    "pillow>=10.0",
+    "pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+
+[project.scripts]
+metalmate = "metalmate.app:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "metalmate.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["metalmate*"]
