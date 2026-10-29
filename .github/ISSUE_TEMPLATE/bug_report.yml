@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in MetalMate doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please check the [open issues](https://github.com/Ranbo-codez/MetalMate/issues) first.
+        **Don't attach screenshots of games against other people**, or anything showing your name, email or other personal details.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What went wrong, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Watch a chess.com bot game in Safari
+        2. Play a few quick moves
+        3. The arrows stay on the old position
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MetalMate version
+      description: Settings → Permissions & help.
+      placeholder: "1.4.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 14.5, MacBook Pro M3"
+    validations:
+      required: true
+  - type: input
+    id: board
+    attributes:
+      label: Board you were watching
+      description: App or website, board theme and piece set.
+      placeholder: "chess.com in Safari, Green board, Neo pieces"
+  - type: input
+    id: engine
+    attributes:
+      label: Engine profile
+      placeholder: "Stockfish · Balanced"
+  - type: textarea
+    id: snapshot
+    attributes:
+      label: Debug snapshot (optional)
+      description: For board-detection problems use Game → Save debug snapshot and drag the two files here. They show only the board area.
+  - type: checkboxes
+    id: fairplay
+    attributes:
+      label: Fair play
+      options:
+        - label: This happened in practice, analysis or a game against a bot, not a game against a person.
+          required: true

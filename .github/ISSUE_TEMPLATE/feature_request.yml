@@ -1,0 +1,19 @@
+name: Feature idea
+description: An idea to make MetalMate better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like MetalMate to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: How would it help you?
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: Features whose main purpose is hiding engine use from opponents or chess sites won't be accepted.

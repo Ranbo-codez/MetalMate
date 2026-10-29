@@ -35,6 +35,9 @@ class ContinuityTest(unittest.TestCase):
         self.alpha = [p for p in self.s.engines.profiles() if p.engine_id == eng.id][0].id
         eng2 = self.s.engines.add_engine("Beta", [sys.executable, FAKE, "--name", "BetaFish"])
         self.beta = [p for p in self.s.engines.profiles() if p.engine_id == eng2.id][0].id
+        # Start from "no engine chosen", so picking Alpha is a switch whatever is installed (on a Mac
+        # without Stockfish the first engine added would already be the active one).
+        self.s.settings.active_engine_profile = ""
         self.s.set_engine_profile(self.alpha)
         self.r = BoardRenderer("green")
         start_img = self.r.to_array(chess.Board(), 400)

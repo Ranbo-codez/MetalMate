@@ -42,7 +42,15 @@ Please add a test with every fix. For recognition problems, a rendered board tha
 - User-facing text: plain, friendly and short. Explain settings in words a non-programmer understands.
 - UI: use the components in `metalmate/ui/controls.py` and the colours in `metalmate/ui/theme.py`.
 
+## Reporting bugs
+
+Use the [bug report form](https://github.com/Ranbo-codez/MetalMate/issues/new/choose). Security problems go
+through [private reporting](https://github.com/Ranbo-codez/MetalMate/security/advisories/new) instead (see
+SECURITY.md).
+
 ## Pull requests
+
+Changes reach `main` only through pull requests that Ranbir Dhall reviews and approves, after the tests pass.
 
 1. Fork and branch from `main`.
 2. Make your change with tests; run the suite.
