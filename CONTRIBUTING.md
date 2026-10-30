@@ -50,9 +50,13 @@ SECURITY.md).
 
 ## Pull requests
 
-Changes reach `main` only through pull requests that Ranbir Dhall reviews and approves, after the tests pass.
+Only collaborators can open pull requests, and changes reach `main` only through pull requests that Ranbir Dhall
+reviews and approves, after the tests pass. To suggest a change, open an issue that describes it; a link to a
+branch on your fork is welcome there.
 
-1. Fork and branch from `main`.
+For collaborators:
+
+1. Branch from `main`.
 2. Make your change with tests; run the suite.
 3. Describe what changed and why. Screenshots help for UI changes (use `scripts/make_screenshots.py` for demo data).
 
