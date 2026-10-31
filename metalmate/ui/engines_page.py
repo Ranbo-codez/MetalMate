@@ -396,8 +396,9 @@ class EnginesPage(QWidget):
         # discover
         disc_scroll, disc = self._scroll()
         intro = label(f"Strong, free engines. Ratings are from {catalog.RATING_SOURCE}: engines playing engines on "
-                      "the same hardware, so they're not comparable with human ratings. Downloads come from each "
-                      "engine's official GitHub releases or Homebrew.", "faint", wrap=True)
+                      "the same hardware, so they're not comparable with human ratings. Each engine downloads in "
+                      "one click from its official release, or from Homebrew's ready-made packages when its "
+                      "authors publish no Mac build. Nothing else to install.", "faint", wrap=True)
         disc.addWidget(intro)
         grid = QGridLayout()
         grid.setSpacing(14)

@@ -3,6 +3,9 @@
 Ratings are CCRL Blitz (computerchess.org.uk/ccrl/404, October 2026). They come from engine-vs-engine
 games on fixed hardware and aren't comparable with human ratings. Engines whose authors don't
 publish a macOS build are listed with their website only.
+
+Everything installs without Homebrew: engines are downloaded from their authors' GitHub releases or,
+when the authors publish no Mac build, as Homebrew's prebuilt package ("bottle") fetched directly.
 """
 from __future__ import annotations
 
@@ -14,13 +17,15 @@ RATING_SOURCE = "CCRL Blitz, Oct 2026"
 
 @dataclass(frozen=True)
 class Installer:
-    kind: str                       # "brew" | "github"
-    formula: str = ""               # brew
-    binary: str = ""                # brew: executable name in Homebrew's bin
+    kind: str                       # "github" | "bottle"
+    formula: str = ""               # bottle: Homebrew formula name
+    binary: str = ""                # bottle: the engine's path inside the package, e.g. "bin/stockfish"
+    deps: tuple = ()                # bottle: formulas whose libraries the engine needs (e.g. readline)
     repo: str = ""                  # github: owner/name
     assets: tuple = ()              # github: ((arch, regex), ...) for the release asset
     inner: str = ""                 # github archives: regex for the engine binary inside
-    args: tuple = ()                # extra command-line arguments (e.g. GNU Chess needs --uci)
+    args: tuple = ()                # extra command-line arguments (e.g. GNU Chess needs --uci); for
+                                    # bottles, "{keg}" is the unpacked package and * is matched on disk
 
     def asset_pattern(self, arch: str) -> str | None:
         for a, pattern in self.assets:
@@ -48,7 +53,7 @@ class CatalogEngine:
         arch = arch or machine_arch()
         out = []
         for inst in self.installers:
-            if inst.kind == "brew" or inst.asset_pattern(arch):
+            if (inst.kind == "bottle" and arch == "arm64") or inst.asset_pattern(arch):
                 out.append(inst)
         return out
 
@@ -66,8 +71,8 @@ def machine_arch() -> str:
     return "arm64" if m in ("arm64", "aarch64") else "x86_64"
 
 
-def brew(formula: str, binary: str = "", args: tuple = ()) -> Installer:
-    return Installer("brew", formula=formula, binary=binary or formula, args=args)
+def bottle(formula: str, binary: str, deps: tuple = (), args: tuple = ()) -> Installer:
+    return Installer("bottle", formula=formula, binary=binary, deps=deps, args=args)
 
 
 def github(repo: str, arm64: str | None = None, x86_64: str | None = None, inner: str = "",
@@ -87,9 +92,9 @@ CATALOG: tuple[CatalogEngine, ...] = (
         "stockfish", "Stockfish", "19", "The Stockfish developers", 3804, "Alpha-beta search · NNUE", "GPL-3.0",
         "https://stockfishchess.org",
         "The strongest chess engine in the world, and the one every other engine is measured against.",
-        (brew("stockfish"),
-         github("official-stockfish/Stockfish", universal=r"macos-universal\.tar\.gz$",
-                inner=r"stockfish-macos-universal$")),
+        (github("official-stockfish/Stockfish", universal=r"macos-universal\.tar\.gz$",
+                inner=r"stockfish-macos-universal$"),
+         bottle("stockfish", "bin/stockfish")),
         size_mb=82),
     CatalogEngine(
         "plentychess", "PlentyChess", "8.0", "Yoshie2000", 3774, "Alpha-beta search · NNUE", "GPL-3.0",
@@ -116,13 +121,13 @@ CATALOG: tuple[CatalogEngine, ...] = (
         "https://lczero.org",
         "AlphaZero-style: a deep network instead of brute-force search. Plays a distinctly human, "
         "positional game. Strength depends heavily on your Mac's GPU.",
-        (brew("lc0"),), size_mb=110),
+        (bottle("lc0", "libexec/lc0", args=("--weights={keg}/libexec/*.pb.gz",)),), size_mb=20),
     CatalogEngine(
         "gnuchess", "GNU Chess", "6.3", "Free Software Foundation", 2833, "Classical alpha-beta", "GPL-3.0",
         "https://www.gnu.org/software/chess/",
         "The classic free engine. Much weaker than modern engines, which makes it a friendlier sparring "
         "partner.",
-        (brew("gnu-chess", "gnuchess", args=("--uci",)),), size_mb=3),
+        (bottle("gnu-chess", "bin/gnuchess", deps=("readline",), args=("--uci",)),), size_mb=27),
     # No macOS builds published: listed so you know they exist.
     CatalogEngine("obsidian", "Obsidian", "16.0", "Gabriele Lombardo", 3774, "Alpha-beta search · NNUE", "GPL-3.0",
                   "https://github.com/gab8192/Obsidian", "Joint second on CCRL, from Italy."),

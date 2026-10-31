@@ -226,6 +226,10 @@ class LiveSession(QObject):
         self.engine.configure(cfg)
         if cfg is None:
             self.engine_ok, self.engine_text = False, "No engine set up. Add one under Engines."
+        elif self.engine_ok is False:
+            # A (new) engine is set up: the old problem no longer applies. If this one fails too,
+            # it says so as soon as it's asked to analyse.
+            self.engine_ok, self.engine_text = None, ""
 
     def set_engine_profile(self, profile_id: str) -> None:
         """Switch engine (profile) any time, even mid-game: the new engine gets the whole game."""

@@ -26,6 +26,7 @@ dependencies = [
     "mss>=9.0",
     "numpy>=1.26",
     "pillow>=10.0",
+    "truststore>=0.10",
     "pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
 ]

@@ -59,6 +59,13 @@ def main() -> None:
         "MetalMate's own licence (LICENSE) does not apply to them.\n",
         ("Python " + sys.version.split()[0], "PSF License Agreement", "https://www.python.org",
          python_licence.read_text(errors="replace")),
+        ("Libraries built into Python: OpenSSL, expat, libffi, libmpdec, HACL*, bzip2, xz (liblzma) and SQLite",
+         "OpenSSL: Apache License 2.0; expat, libffi, HACL*: MIT; libmpdec: BSD-2-Clause; bzip2: bzip2 licence; "
+         "xz and SQLite: public domain",
+         "https://docs.python.org/3/license.html#licenses-and-acknowledgements-for-incorporated-software",
+         "The full texts and copyright notices are in licenses/Python-incorporated-software.rst (CPython's\n"
+         "\"Licenses and Acknowledgements for Incorporated Software\", including OpenSSL's Apache License 2.0)\n"
+         "and licenses/bzip2.txt.\n\n" + (ROOT / "licenses" / "bzip2.txt").read_text(errors="replace")),
         (f"Qt {qt} and Qt for Python (PySide6, Shiboken6) {qt}",
          "GNU Lesser General Public License v3.0 (licenses/LGPL-3.0.txt, which builds on licenses/GPL-3.0.txt)",
          "https://www.qt.io, https://doc.qt.io/qtforpython-6/",
@@ -71,6 +78,8 @@ def main() -> None:
          dist_licences("numpy")),
         (f"Pillow {v('pillow')}", "MIT-CMU", "https://python-pillow.github.io", dist_licences("pillow")),
         (f"python-mss {v('mss')}", "MIT", "https://github.com/BoboTiG/python-mss", dist_licences("mss")),
+        (f"truststore {v('truststore')}", "MIT", "https://github.com/sethmlarson/truststore",
+         dist_licences("truststore")),
         (f"PyObjC {v('pyobjc-core')} (pyobjc-core, pyobjc-framework-Cocoa, pyobjc-framework-Quartz)", "MIT",
          "https://github.com/ronaldoussoren/pyobjc", dist_licences("pyobjc-framework-Cocoa")),
         (f"PyInstaller {v('pyinstaller')} bootloader", "GPL-2.0-or-later with the PyInstaller bootloader exception",

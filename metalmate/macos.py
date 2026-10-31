@@ -6,6 +6,7 @@ import ctypes
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -251,15 +252,45 @@ def app_bundle_path() -> str | None:
 
 
 def relaunch_after_exit() -> None:
-    """Start a fresh copy of the app as soon as this process exits (used after granting permissions)."""
+    """Start a fresh copy of the app that takes over once this one has quit (e.g. after granting
+    Screen Recording, which macOS only applies to a new process).
+
+    The new copy is requested from macOS right away, while this one is still running: asking only
+    after the old process is gone fails, because macOS may still count the old copy as running (and
+    just "activate" it) or end the helper that was waiting to ask. `-n` makes macOS start a second
+    copy, which waits for this one to exit before it starts (see wait_for_previous_instance)."""
     bundle = app_bundle_path()
     if bundle:
-        cmd = f'open "{bundle}"'
+        subprocess.Popen(["/usr/bin/open", "-n", bundle, "--args", "--after-pid", str(os.getpid())],
+                         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         cmd = f'cd "{root}" && "{sys.executable}" -m metalmate'
-    subprocess.Popen(["/bin/sh", "-c", f"while kill -0 {os.getpid()} 2>/dev/null; do sleep 0.2; done; {cmd}"],
-                     start_new_session=True)
+        subprocess.Popen(["/bin/sh", "-c", f"while kill -0 {os.getpid()} 2>/dev/null; do sleep 0.2; done; {cmd}"],
+                         start_new_session=True)
+
+
+def wait_for_previous_instance(argv: list[str], timeout: float = 15.0) -> list[str]:
+    """If this copy was started by relaunch_after_exit, wait until the old one has quit. Returns argv
+    without the --after-pid argument."""
+    if "--after-pid" not in argv:
+        return argv
+    i = argv.index("--after-pid")
+    try:
+        pid = int(argv[i + 1])
+    except (IndexError, ValueError):
+        return argv[:i] + argv[i + 1:]
+    rest = argv[:i] + argv[i + 2:]
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        except PermissionError:
+            pass
+        time.sleep(0.1)
+    return rest
 
 
 def activate_app(pid: int) -> None:

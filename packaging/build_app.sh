@@ -2,19 +2,25 @@
 # Build MetalMate.app (Apple Silicon) into dist/.
 #   --install  also copy it to /Applications
 #   --dmg      also make dist/MetalMate-<version>.dmg for downloading
-# The app is built with Python from python.org (works on older macOS than Homebrew's) and the exact
-# library versions in packaging/requirements-release.txt. Set METALMATE_PYTHON to use another Python.
+# The app is built with a Python made for older macOS too (not Homebrew's): the standalone build in
+# .toolchain/python if it's there, else python.org's, and the exact library versions in
+# packaging/requirements-release.txt. Set METALMATE_PYTHON to use another Python.
 set -e
 cd "$(dirname "$0")/.."
 APP_ID="com.ranbirdhall.metalmate"
 APP="dist/MetalMate.app"
 MIN_MACOS="12.0"
-PY="${METALMATE_PYTHON:-/Library/Frameworks/Python.framework/Versions/3.13/bin/python3}"
+PY="${METALMATE_PYTHON:-}"
+if [ -z "$PY" ]; then
+  for candidate in .toolchain/python/bin/python3 /Library/Frameworks/Python.framework/Versions/3.13/bin/python3; do
+    [ -x "$candidate" ] && PY="$candidate" && break
+  done
+fi
 VENV=".venv-release"
 
-if [ ! -x "$PY" ]; then
-  echo "Python not found at $PY. Install Python 3.13 from https://www.python.org/downloads/macos/" \
-       "or set METALMATE_PYTHON." >&2
+if [ -z "$PY" ] || [ ! -x "$PY" ]; then
+  echo "No Python 3.13 for building. Install it from https://www.python.org/downloads/macos/," \
+       "unpack a python-build-standalone build into .toolchain/python, or set METALMATE_PYTHON." >&2
   exit 1
 fi
 if [ ! -x "$VENV/bin/python" ]; then

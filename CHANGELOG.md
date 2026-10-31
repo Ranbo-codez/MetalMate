@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.1 (2026-10-31)
+
+- **Every engine installs in one click, with nothing else to install.** Downloads failed in the 1.4.0
+  app with a certificate error; they now use your Mac's own trusted certificates. Leela Chess Zero and
+  GNU Chess no longer need Homebrew: MetalMate downloads Homebrew's ready-made packages directly
+  (checked against their published checksums), and Stockfish comes from its official release.
+- **Relaunch works.** After granting Screen Recording, *Relaunch MetalMate* now reopens the app instead of
+  just quitting.
+- **Sharp Dock icon.** The icon no longer turns blurry while MetalMate is open.
+- **No more stuck "Engine problem".** After installing the first engine, the warning in the sidebar now
+  clears straight away.
+
 ## 1.4.0 (2026-10-29): first public release
 
 MetalMate by Ranbir Dhall, now public: free for non-commercial use under the PolyForm Noncommercial

@@ -36,8 +36,8 @@
   and never records video.
 - **Shows the best move your way.** On its own board with the top lines and an evaluation graph; as click-through
   arrows drawn over your real board (hold a key to peek, toggle them, or keep them on); or spoken out loud.
-- **Many engines.** Stockfish works out of the box. The *Discover* tab lists strong free engines with their CCRL
-  ratings and installs them in one click. Make profiles (think time, threads, memory, limited strength) and switch
+- **Many engines, one click each.** The *Discover* tab lists strong free engines with their CCRL ratings and
+  installs any of them in one click: no Homebrew, no Terminal. Make profiles (think time, threads, memory, limited strength) and switch
   between them any time, even mid-game: the new engine picks up the whole game so far.
 - **Keeps up with the game.** Switch tabs, check your email, come back: it's still the same game. Missed a few moves
   while you were away? MetalMate works out what was played. Animations and half-drawn frames don't turn into
@@ -77,8 +77,8 @@ A short setup guide walks you through it:
 
 1. **Screen Recording.** Allow MetalMate under *System Settings → Privacy & Security → Screen & System Audio
    Recording*, then relaunch it.
-2. **Engine.** Stockfish is found automatically if it's installed (`brew install stockfish`); otherwise install it
-   in one click from *Engines → Discover*.
+2. **Engine.** Install Stockfish in one click from the setup guide or *Engines → Discover* (if you already have
+   it, MetalMate finds it).
 3. **Your board.** Choose the window with your chessboard. When it shows the starting position, MetalMate learns
    the board by itself (or press *Calibrate*, ⌃⇧C).
 
@@ -107,7 +107,9 @@ Every key can be changed.
 ## Engines
 
 Any [UCI](https://www.chessprogramming.org/UCI) engine works: add it with *Engines → Add from file…*. The
-*Discover* tab installs these directly from their official releases or Homebrew:
+*Discover* tab installs these in one click, nothing else needed. Most come straight from their authors' official
+releases; Leela Chess Zero and GNU Chess, which have no official Mac build, come from Homebrew's ready-made
+packages, downloaded directly (Homebrew itself isn't needed):
 
 | Engine | CCRL Blitz | Style |
 |---|---|---|
@@ -147,11 +149,14 @@ Everything lives on your Mac:
 - `~/Library/Application Support/MetalMate/`: settings, engines, board profiles and the game library (SQLite).
 - `~/Documents/MetalMate Games/`: each game as a text file with its PGN (optional).
 
-Nothing is uploaded. The only network access is downloading an engine when you ask for one.
+Nothing is uploaded. The only network access is downloading an engine when you ask for one (from GitHub or
+Homebrew's package servers).
 
 ## Build it yourself
 
-You need an Apple Silicon Mac and Python 3.13 from [python.org](https://www.python.org/downloads/macos/).
+You need an Apple Silicon Mac and Python 3.13, either from [python.org](https://www.python.org/downloads/macos/)
+or a [standalone build](https://github.com/astral-sh/python-build-standalone/releases) unpacked into
+`.toolchain/python`.
 
 ```bash
 git clone https://github.com/Ranbo-codez/MetalMate.git

@@ -47,3 +47,6 @@ debug/
 
 # Private engine work, not part of the public app
 engine/
+
+# Build tools fetched by the build script
+.toolchain/

@@ -167,9 +167,17 @@ def mark_pixmap(size: int, ratio: float = 2.0) -> QPixmap:
 
 def app_icon() -> QIcon:
     icon = QIcon()
-    for s in (16, 32, 64, 128, 256, 512):
+    for s in (16, 32, 64, 128, 256, 512, 1024):
         icon.addPixmap(app_pixmap(s))
     return icon
+
+
+def needs_window_icon() -> bool:
+    """Whether to give Qt an icon for the Dock. The built app already has a sharp one in its bundle
+    (MetalMate.icns, up to 1024 px); handing Qt our drawn icon would replace it with a blurry copy
+    while the app runs. Running from source there's no bundle icon, so Qt's is better than none."""
+    import sys
+    return not (sys.platform == "darwin" and getattr(sys, "frozen", False))
 
 
 def tray_icon() -> QIcon:

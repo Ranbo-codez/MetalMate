@@ -5,6 +5,7 @@ shiboken6==6.9.3
 numpy==2.5.4
 pillow==13.0.0
 mss==10.2.0
+truststore==0.10.5
 pyobjc-core==12.2.2
 pyobjc-framework-Cocoa==12.2.2
 pyobjc-framework-Quartz==12.2.2

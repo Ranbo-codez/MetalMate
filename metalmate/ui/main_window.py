@@ -24,7 +24,7 @@ from .controls import StatusDot, Toast, button, label
 from .engines_page import EnginesPage
 from .games_page import GamesPage
 from .live_page import LivePage
-from .logo import app_icon, mark_pixmap, paint_wordmark, tray_icon
+from .logo import app_icon, mark_pixmap, needs_window_icon, paint_wordmark, tray_icon
 from .settings_page import SettingsPage
 from .source_dialogs import RegionDialog, WindowPickerDialog
 from .stats_page import StatsPage
@@ -105,7 +105,8 @@ class MainWindow(QMainWindow):
         self.s = session
         self.st = session.settings
         self.setWindowTitle(APP_NAME)
-        self.setWindowIcon(app_icon())
+        if needs_window_icon():
+            self.setWindowIcon(app_icon())
         if sys.platform == "darwin":
             # Edge to edge: the sidebar runs up behind the traffic lights, like native Mac apps.
             # (Qt 6.9+; on older Qt the window simply keeps its normal title bar.)

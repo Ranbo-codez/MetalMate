@@ -5,13 +5,19 @@ threads, memory, and an optional strength limit. You switch profiles (and so eng
 including mid-game: the new engine is given the whole game so far."""
 from __future__ import annotations
 
+import glob
+import hashlib
 import json
 import os
+import platform
 import re
 import shutil
+import ssl
 import stat
+import struct
 import subprocess
 import tarfile
+import tempfile
 import threading
 import time
 import urllib.request
@@ -250,17 +256,132 @@ class InstallError(Exception):
     pass
 
 
-def brew_path() -> str | None:
-    for p in (shutil.which("brew"), "/opt/homebrew/bin/brew", "/usr/local/bin/brew"):
-        if p and os.path.isfile(p) and os.access(p, os.X_OK):
-            return p
-    return None
+_SSL: ssl.SSLContext | None = None
+
+
+def ssl_context() -> ssl.SSLContext:
+    """HTTPS that trusts the same certificates as Safari. The Python inside the app has no
+    certificate list of its own, so without this every download fails with CERTIFICATE_VERIFY_FAILED."""
+    global _SSL
+    if _SSL is None:
+        try:
+            import truststore
+            _SSL = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        except Exception:
+            _SSL = ssl.create_default_context()
+    return _SSL
+
+
+def _open(req: urllib.request.Request | str, timeout: float):
+    return urllib.request.urlopen(req, timeout=timeout, context=ssl_context())
 
 
 def _github_api(url: str, timeout: float = 20) -> dict:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _open(req, timeout) as resp:
         return json.loads(resp.read().decode())
+
+
+# Homebrew names its packages after the macOS they're built for; newest first.
+_MACOS_NAMES = (("golden_gate", 27), ("tahoe", 26), ("sequoia", 15), ("sonoma", 14), ("ventura", 13),
+                ("monterey", 12))
+FORMULA_API = "https://formulae.brew.sh/api/formula"
+
+
+def _formula(name: str) -> dict:
+    return _github_api(f"{FORMULA_API}/{name}.json")
+
+
+def macos_major() -> int:
+    try:
+        return int(platform.mac_ver()[0].split(".")[0])
+    except (ValueError, IndexError):
+        return 13
+
+
+def _bottle_file(info: dict, arch: str | None = None, major: int | None = None) -> tuple[str, str]:
+    """URL and SHA-256 of the newest package built for this Mac's macOS or an older one."""
+    files = info.get("bottle", {}).get("stable", {}).get("files", {})
+    arch = arch or machine_arch()
+    major = major or macos_major()
+    prefix = "arm64_" if arch == "arm64" else ""
+    for name, version in _MACOS_NAMES:
+        f = files.get(prefix + name)
+        if f and version <= major:
+            return f["url"], f["sha256"]
+    if "all" in files:
+        return files["all"]["url"], files["all"]["sha256"]
+    raise InstallError(f"no prebuilt {info.get('name', 'package')} for macOS {major} on this Mac")
+
+
+def _is_macho(path: Path) -> bool:
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"\xcf\xfa\xed\xfe"
+    except OSError:
+        return False
+
+
+_DYLIB_COMMANDS = {0xC, 0xD, 0x80000018, 0x8000001F, 0x80000023}  # load, id, weak, re-export, upward
+_PLACEHOLDERS = ("@@HOMEBREW_PREFIX@@/", "@@HOMEBREW_CELLAR@@/")
+
+
+def relink_macho(path: Path) -> list[str]:
+    """Point a Homebrew-built binary's libraries (written as @@HOMEBREW_PREFIX@@/... until Homebrew
+    installs it) at the package's own lib folder. Returns the library names it now loads from there."""
+    data = bytearray(path.read_bytes())
+    if struct.unpack_from("<I", data, 0)[0] != 0xFEEDFACF:
+        return []
+    ncmds = struct.unpack_from("<I", data, 16)[0]
+    off, relinked = 32, []
+    for _ in range(ncmds):
+        cmd, size = struct.unpack_from("<II", data, off)
+        if cmd in _DYLIB_COMMANDS:
+            str_off = struct.unpack_from("<I", data, off + 8)[0]
+            start = off + str_off
+            end = data.index(0, start)
+            name = data[start:end].decode("utf-8", "replace")
+            if name.startswith(_PLACEHOLDERS):
+                new = f"@loader_path/../lib/{name.rsplit('/', 1)[1]}".encode()
+                if len(new) >= size - str_off:
+                    raise InstallError(f"can't relink {path.name}")
+                data[start:off + size] = new + b"\0" * (size - str_off - len(new))
+                if cmd != 0xD:  # the library's own name doesn't need to exist
+                    relinked.append(name.rsplit("/", 1)[1])
+        off += size
+    if relinked or data != path.read_bytes():
+        path.chmod(path.stat().st_mode | stat.S_IWUSR)
+        path.write_bytes(bytes(data))
+    return relinked
+
+
+def relink_package(keg: Path) -> None:
+    """Relink every binary in an unpacked bottle, check its libraries are there, and re-sign what
+    changed (macOS refuses to run a binary whose signature no longer matches)."""
+    for f in keg.rglob("*"):
+        if f.is_symlink() or not f.is_file() or not _is_macho(f):
+            continue
+        before = f.read_bytes()
+        relinked = relink_macho(f)
+        if f.read_bytes() != before:
+            subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(f)], capture_output=True, check=True)
+        for lib in relinked:
+            if not (f.parent.parent / "lib" / lib).exists():
+                raise InstallError(f"{f.name} needs {lib}, which isn't in the package")
+        f.chmod(f.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        subprocess.run(["xattr", "-d", "com.apple.quarantine", str(f)], capture_output=True)
+
+
+def _expand_arg(arg: str, keg: Path) -> str:
+    """"{keg}" is the package folder; a * picks the matching file (e.g. Leela's network)."""
+    arg = arg.replace("{keg}", str(keg))
+    if "*" not in arg:
+        return arg
+    head, sep, pattern = arg.rpartition("=")
+    hits = sorted(glob.glob(pattern))
+    if not hits:
+        raise InstallError(f"the package has no {os.path.basename(pattern)}")
+    return head + sep + hits[-1]
 
 
 class InstallJob(QObject):
@@ -298,7 +419,7 @@ class InstallJob(QObject):
             if self._cancel.is_set():
                 return self._done(False, "Cancelled.")
             try:
-                command, source = (self._brew(inst) if inst.kind == "brew" else self._github(inst))
+                command, source = (self._bottle(inst) if inst.kind == "bottle" else self._github(inst))
                 self.progress.emit(-1, "Checking the engine works…")
                 info = probe(command)
                 eng = self.registry.add_engine(self.entry.name, command, source, self.entry.id,
@@ -314,29 +435,53 @@ class InstallJob(QObject):
             return self._done(False, f"{self.entry.name} doesn't publish a build for this Mac.")
         self._done(False, "Couldn't install: " + " · ".join(errors))
 
-    # ---- Homebrew
-    def _brew(self, inst: Installer) -> tuple[list, str]:
-        brew = brew_path()
-        if not brew:
-            raise InstallError("Homebrew isn't installed")
-        prefix = subprocess.run([brew, "--prefix"], capture_output=True, text=True, timeout=30).stdout.strip()
-        binary = os.path.join(prefix or "/opt/homebrew", "bin", inst.binary)
-        if not os.path.exists(binary):
-            self.progress.emit(-1, f"Installing {inst.formula} with Homebrew (this can take a minute)…")
-            env = dict(os.environ, HOMEBREW_NO_AUTO_UPDATE="1", HOMEBREW_NO_INSTALL_CLEANUP="1",
-                       HOMEBREW_NO_ENV_HINTS="1")
-            proc = subprocess.Popen([brew, "install", inst.formula], stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True, env=env)
-            for line in proc.stdout:
-                if self._cancel.is_set():
-                    proc.terminate()
-                    raise InstallError("Cancelled")
-                line = line.strip().lstrip("=> ").strip()
-                if line:
-                    self.progress.emit(-1, line[:90])
-            if proc.wait() != 0 or not os.path.exists(binary):
-                raise InstallError(f"Homebrew couldn't install {inst.formula}")
-        return [binary, *inst.args], "homebrew"
+    # ---- Homebrew's prebuilt packages, without Homebrew
+    def _bottle(self, inst: Installer) -> tuple[list, str]:
+        """Download Homebrew's prebuilt package for an engine (and the libraries it needs) straight
+        from Homebrew's servers, then point the engine at those libraries. Homebrew itself isn't needed."""
+        self.progress.emit(-1, "Finding the latest version…")
+        info = _formula(inst.formula)
+        version = info["versions"]["stable"]
+        folder = self.engines_dir / self.entry.id / re.sub(r"[^\w.-]", "_", version)
+        if folder.exists():
+            shutil.rmtree(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        keg = self._pour(info, folder, label=self.entry.name)
+        for dep in inst.deps:
+            if self._cancel.is_set():
+                raise InstallError("Cancelled")
+            with tempfile.TemporaryDirectory(dir=folder) as tmp:
+                dep_keg = self._pour(_formula(dep), Path(tmp), label=dep)
+                (keg / "lib").mkdir(exist_ok=True)
+                for lib in (dep_keg / "lib").glob("*.dylib"):
+                    shutil.copy2(lib, keg / "lib" / lib.name, follow_symlinks=False)
+        self.progress.emit(-1, "Setting up…")
+        relink_package(keg)
+        binary = keg / inst.binary
+        if not binary.is_file():
+            raise InstallError(f"couldn't find {inst.binary} in the package")
+        return [str(binary), *(_expand_arg(a, keg) for a in inst.args)], "download"
+
+    def _pour(self, info: dict, folder: Path, label: str) -> Path:
+        """Download and unpack one bottle into folder; returns the package folder (its "keg")."""
+        url, sha = _bottle_file(info)
+        archive = folder / f"{info['name']}.tar.gz"
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Authorization": "Bearer QQ=="})
+        self._download(req, archive, 0, label)
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if digest != sha:
+            raise InstallError(f"the {label} download was damaged (checksum mismatch)")
+        self.progress.emit(-1, "Unpacking…")
+        with tarfile.open(archive) as tar:
+            tar.extractall(folder, filter="data")
+        archive.unlink()
+        keg = folder / info["name"] / info["versions"]["stable"]
+        if not keg.is_dir():
+            kegs = [p for p in (folder / info["name"]).glob("*") if p.is_dir()]
+            if not kegs:
+                raise InstallError(f"the {label} package was empty")
+            keg = kegs[0]
+        return keg
 
     # ---- GitHub releases
     def _github(self, inst: Installer) -> tuple[list, str]:
@@ -354,15 +499,17 @@ class InstallJob(QObject):
             shutil.rmtree(folder)
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / asset["name"]
-        self._download(asset["browser_download_url"], target, asset.get("size", 0))
+        self._download(asset["browser_download_url"], target, asset.get("size", 0), self.entry.name)
         binary = self._unpack(target, folder, inst.inner)
         binary.chmod(binary.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         subprocess.run(["xattr", "-d", "com.apple.quarantine", str(binary)], capture_output=True)
         return [str(binary), *inst.args], "download"
 
-    def _download(self, url: str, target: Path, size: int) -> None:
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=60) as resp, open(target, "wb") as out:
+    def _download(self, url: str | urllib.request.Request, target: Path, size: int, label: str = "") -> None:
+        req = url if isinstance(url, urllib.request.Request) else urllib.request.Request(
+            url, headers={"User-Agent": USER_AGENT})
+        what = f"Downloading {label}…" if label else "Downloading…"
+        with _open(req, 60) as resp, open(target, "wb") as out:
             total = size or int(resp.headers.get("Content-Length") or 0)
             got = 0
             while True:
@@ -375,7 +522,7 @@ class InstallJob(QObject):
                 got += len(chunk)
                 mb = got / 1e6
                 self.progress.emit(got / total if total else -1,
-                                   f"Downloading… {mb:.1f} of {total / 1e6:.0f} MB" if total else f"Downloading… {mb:.1f} MB")
+                                   f"{what} {mb:.1f} of {total / 1e6:.0f} MB" if total else f"{what} {mb:.1f} MB")
         if total and target.stat().st_size != total:
             raise InstallError("the download was incomplete")
 

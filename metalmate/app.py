@@ -8,22 +8,56 @@ import sys
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
+from . import macos
 from .config import APP_NAME, Settings
 from .session import LiveSession
 from .ui import theme
-from .ui.logo import app_icon
+from .ui.logo import app_icon, needs_window_icon
 from .ui.main_window import MainWindow
 from .ui.splash import Splash
 
 
+def _test_installs(session: LiveSession, log_path: str, quit_app) -> None:
+    """Install every Discover engine that has a Mac build, one after another, as the Download button
+    does, then write the results and quit."""
+    from . import catalog
+    from .config import ENGINES_DIR
+    from .engines import InstallJob
+
+    entries = [e for e in catalog.CATALOG if e.installers_for()]
+    lines: list[str] = []
+
+    def next_one() -> None:
+        if not entries:
+            with open(log_path, "w") as f:
+                f.write("\n".join(lines) + "\n")
+            quit_app()
+            return
+        entry = entries.pop(0)
+        job = InstallJob(entry, session.engines, ENGINES_DIR)
+
+        def done(ok: bool, message: str, engine_id: str) -> None:
+            lines.append(f"{entry.id}: {'OK' if ok else 'FAIL'} {message}")
+            QTimer.singleShot(0, next_one)
+
+        job.finished.connect(done)
+        job.start()
+        session._test_jobs = getattr(session, "_test_jobs", []) + [job]  # keep it alive
+
+    next_one()
+
+
 def main() -> None:
+    # Started by "Relaunch": let the old copy finish quitting first.
+    sys.argv = macos.wait_for_previous_instance(sys.argv)
     QApplication.setApplicationName(APP_NAME)
     QApplication.setOrganizationName(APP_NAME)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setPalette(theme.palette())
     app.setStyleSheet(theme.QSS)
-    app.setWindowIcon(app_icon())
+    if needs_window_icon():
+        app.setWindowIcon(app_icon())
     app.setQuitOnLastWindowClosed(False)  # keeps watching from the menu bar when the window is closed
 
     settings = Settings.load()
@@ -60,6 +94,12 @@ def main() -> None:
         splash.finished.connect(reveal)
     else:
         reveal()
+
+    if os.environ.pop("METALMATE_TEST_RELAUNCH", None):  # automated test of the Relaunch button (once:
+        QTimer.singleShot(3000, window.relaunch)                # the new copy inherits the environment)
+    install_log = os.environ.get("METALMATE_TEST_INSTALL")  # automated test of one-click engine installs
+    if install_log:
+        QTimer.singleShot(1000, lambda: _test_installs(session, install_log, window.quit_app))
 
     if selftest_log:
         def write_and_quit(report) -> None:
