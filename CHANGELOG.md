@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.2 (2026-11-02)
+
+- **Guides on chess.com (and other sites) work again.** If the board moved on the page (chess.com moves it
+  when you go from the home page to a game) just as MetalMate learned it, it learned from a screenshot that
+  was off by part of a square. Every piece then looked wrong, so no guides appeared ("I can see the board
+  but can't read the pieces"). MetalMate now checks that a board is lined up with its squares before
+  learning it, finds the board again if it isn't, and re-learns a board it can't read by itself as soon as
+  it shows the starting position.
+
 ## 1.4.1 (2026-10-31)
 
 - **Every engine installs in one click, with nothing else to install.** Downloads failed in the 1.4.0

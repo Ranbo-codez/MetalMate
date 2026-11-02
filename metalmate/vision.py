@@ -24,12 +24,19 @@ RING = (1, 6)        # band (px from the edge) used to estimate the square's bac
 BG_TOL = 30.0        # RGB distance below which a pixel counts as background
 LUM_WEIGHT = 1.5     # brightness vs. silhouette weight in the descriptor
 PROFILE_VERSION = 1
+MAX_GRID_OFFSET = 0.06  # a crop whose grid lines are off by more than this (in squares) isn't lined up
 
 START_PLACEMENT = chess.STARTING_BOARD_FEN
 
 
 class CalibrationError(Exception):
     pass
+
+
+class GridError(CalibrationError):
+    """The board is in the starting position but the screenshot isn't lined up with its squares
+    (e.g. the board moved on the page since it was found). Learning from it would make every piece
+    look wrong later, so find the board again first."""
 
 
 def _make_masks() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -223,6 +230,17 @@ class Recognition:
         return "\n".join(" ".join(row) for row in self.grid)
 
 
+def grid_misalignment(img: np.ndarray) -> float | None:
+    """How far (in squares) the board's grid lines are from where a crop of exactly the 8x8 squares
+    puts them; None when no clear grid shows (e.g. a heavily textured board: then we can't tell)."""
+    h, w = img.shape[:2]
+    found = refine_grid(img, 0, 0, w, h)
+    if found is None:
+        return None
+    x, y, gw, gh = found
+    return max(abs(x) / (w / 8), abs(y) / (h / 8), abs(gw - w) / (w / 8), abs(gh - h) / (h / 8))
+
+
 def calibrate(img: np.ndarray) -> tuple[BoardProfile, bool]:
     """Build a profile from a screenshot of the board in the starting position.
     Returns the profile and whether White is at the bottom of the screen."""
@@ -235,6 +253,13 @@ def calibrate(img: np.ndarray) -> tuple[BoardProfile, bool]:
             "That doesn't look like the starting position. Make sure the selection covers "
             "exactly the 8x8 squares and every piece is on its starting square, then try again.\n\n"
             f"(occupied-square fill {occupied_min:.3f} vs empty-square fill {empty_max:.3f})"
+        )
+    off = grid_misalignment(img)
+    if off is not None and off > MAX_GRID_OFFSET:
+        raise GridError(
+            "The selection isn't lined up with the board's squares (it's off by about "
+            f"{off:.0%} of a square). Mark the board again with “Choose window…” or select exactly the 8x8 "
+            "squares, then try again."
         )
 
     lum = f.lum.reshape(8, 8)

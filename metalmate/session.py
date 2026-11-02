@@ -31,7 +31,7 @@ from .profiles import ProfileStore, plausibility
 from .speech import Speaker, hint_words, move_words
 from .storage import GameStore, opponent_from_title
 from .tracker import GameTracker, is_continuation
-from .vision import (BLANK, CalibrationError, calibrate, explain_calibration_failure, find_board,
+from .vision import (BLANK, CalibrationError, GridError, calibrate, explain_calibration_failure, find_board,
                      recognize)
 
 TRACE = bool(os.environ.get("METALMATE_TRACE"))  # diagnostic log of every frame and guide update
@@ -160,6 +160,7 @@ class LiveSession(QObject):
         self._debug_saved = 0
         self._covered = False
         self._last_detect = 0.0
+        self._last_relearn = 0.0                   # when a known-but-unreadable board was last re-learned
         self._board_lost = False    # the marked area stopped looking like a board: find it again
         self._lost_frames = 0
         self._absent_frames = 0     # frames with no legal-looking board in view
@@ -640,6 +641,8 @@ class LiveSession(QObject):
 
         # No legal-looking board in view: another tab, a popup, a page loading. Pause, don't end.
         if plausibility(rec) is None:
+            if self._relearn_if_start(img):
+                return
             self._mark_unsure()
             if self._absent_frames == 2 and self._debug_saved < AUTO_DEBUG_FRAMES and \
                     (not self._game_title or self.window_title == self._game_title):
@@ -1033,22 +1036,81 @@ class LiveSession(QObject):
 
         self._capture(rect, done, force_hide=True)
 
+    def _fresh_board_crop(self):
+        """Find the board again in a fresh screenshot of the whole window and return exactly its 8x8
+        squares (also updating where we think it is). None if it can't be found right now."""
+        s = self.source
+        if s is None or s.kind != "window" or not s.window_id:
+            return None
+        info = macos.window_info(s.window_id)
+        if info is None or not info.onscreen:
+            return None
+        full = macos.capture_window(info.id)
+        found = find_board(full) if full is not None and full.size else None
+        if found is None:
+            return None
+        rel = [v * info.w / full.shape[1] for v in found]
+        if s.rel is None or max(abs(a - b) for a, b in zip(rel, s.rel)) > 1.0:
+            self.log.info("board re-located before learning it: %s -> %s",
+                          [round(v) for v in s.rel] if s.rel else None, [round(v) for v in rel])
+            s.rel, s.win_size = rel, [info.w, info.h]
+            self._board_lost, self._lost_frames = False, 0
+            self.board_rect = QRect()  # the next look puts the guides on the new spot
+            self._save_source()
+            self.source_changed.emit()
+        x, y, w, h = (int(round(v)) for v in found)
+        return full[max(0, y):y + h, max(0, x):x + w].copy()
+
+    def _calibrate_lined_up(self, img):
+        """calibrate(), but if the screenshot isn't lined up with the squares (the board moved since it
+        was found), find the board again and learn from that instead. Returns (profile, white_bottom, img)."""
+        try:
+            profile, white_bottom = calibrate(img)
+            return profile, white_bottom, img
+        except GridError:
+            fresh = self._fresh_board_crop()
+            if fresh is None:
+                raise
+            profile, white_bottom = calibrate(fresh)
+            return profile, white_bottom, fresh
+
+    def _relearn_if_start(self, img) -> bool:
+        """A board we have a profile for, but can't read, that shows the starting position: its look
+        changed, or the profile was learned from a bad screenshot. Learn it again (at most every 3 s)."""
+        try:
+            calibrate(img)  # quick: fails straight away unless this is the starting position
+        except GridError:
+            pass            # the starting position, just not lined up: _learn_board finds the board again
+        except CalibrationError:
+            return False
+        if time.time() - self._last_relearn < 3.0:
+            return False
+        self._last_relearn = time.time()
+        self.log.info("can't read a known board that shows the starting position: learning it again")
+        ok, _ = self._learn_board(img, quiet=True)
+        return ok
+
     def _learn_board(self, img, quiet: bool) -> tuple[bool, str]:
         """Calibrate from a screenshot. quiet=True is the automatic attempt made while watching."""
         try:
-            profile, white_bottom = calibrate(img)
-        except CalibrationError:
+            profile, white_bottom, img = self._calibrate_lined_up(img)
+        except CalibrationError as exc:
             kind, message = explain_calibration_failure(img)
+            if isinstance(exc, GridError):
+                kind, message = "grid", str(exc)
             self.last_calibration = (kind, img)
             if not quiet or kind != getattr(self, "_last_learn_kind", None):
                 self.log.info("calibration failed (%s): capture %sx%s std=%.1f", kind, img.shape[1], img.shape[0],
                               float(img.std()))
             self._last_learn_kind = kind
-            if kind == "not_a_board":
-                self._note_lost(True)
+            if kind in ("not_a_board", "grid"):
+                self._note_lost(True)  # it may have moved: look for it again
             if quiet:
                 if kind == BLANK:
                     self.set_status(message, "error")
+                elif kind == "grid":
+                    self.set_status("I can see the starting position but the board seems to have moved. "
+                                    "Looking for it…", "info")
                 else:
                     self.set_status("Watching. When the board shows the starting position I'll learn it by "
                                     "itself (or press Calibrate then).", "info")
