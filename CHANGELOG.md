@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.3 (2026-11-04)
+
+Found by playing real games against chess.com's bots with MetalMate watching.
+
+- **No more unreadable boards after a new game starts.** chess.com spins the pieces into place at the start of
+  a game; MetalMate could learn the board from a frame where the pieces were sideways and then couldn't read
+  it. It now learns a board only once two looks in a row agree.
+- **Keeps up when the board moves on the page.** When a game starts chess.com moves the board (the player
+  names appear above it). MetalMate kept reading the old spot for up to 20 seconds, so the arrows were late or
+  missing. It now notices straight away that the squares no longer line up and finds the board again.
+- **Switching sites works before a board is learned.** Changing from chess.com to a Lichess tab (whose board
+  sits elsewhere on the page) left MetalMate looking at the old spot; it now finds the new board and learns it.
+
 ## 1.4.2 (2026-11-02)
 
 - **Guides on chess.com (and other sites) work again.** If the board moved on the page (chess.com moves it

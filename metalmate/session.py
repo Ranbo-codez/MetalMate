@@ -13,6 +13,7 @@ import time
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+import numpy as np
 from metalmate import mmchess as chess
 from PIL import Image
 from PySide6.QtCore import QObject, QRect, QTimer, Signal
@@ -31,8 +32,8 @@ from .profiles import ProfileStore, plausibility
 from .speech import Speaker, hint_words, move_words
 from .storage import GameStore, opponent_from_title
 from .tracker import GameTracker, is_continuation
-from .vision import (BLANK, CalibrationError, GridError, calibrate, explain_calibration_failure, find_board,
-                     recognize)
+from .vision import (BLANK, MAX_GRID_OFFSET, CalibrationError, GridError, calibrate, explain_calibration_failure,
+                     find_board, grid_misalignment, recognize)
 
 TRACE = bool(os.environ.get("METALMATE_TRACE"))  # diagnostic log of every frame and guide update
 
@@ -161,6 +162,8 @@ class LiveSession(QObject):
         self._covered = False
         self._last_detect = 0.0
         self._last_relearn = 0.0                   # when a known-but-unreadable board was last re-learned
+        self._trace_frames = 0
+        self._steady_thumb, self._steady_t = None, 0.0  # last look, to learn boards only when they're still
         self._board_lost = False    # the marked area stopped looking like a board: find it again
         self._lost_frames = 0
         self._absent_frames = 0     # frames with no legal-looking board in view
@@ -393,6 +396,18 @@ class LiveSession(QObject):
             return None, f"Looking for the chessboard in {s.app}…"
         x, y, w, h = s.rel
         return QRect(round(info.x + x), round(info.y + y), round(w), round(h)), ""
+
+    def _check_still_lined_up(self, img) -> None:
+        """An unreadable board whose squares no longer line up with where we look has moved on the
+        page (sites move the board when a game starts, a banner appears, the window is resized...).
+        Look for it straight away rather than after several frames and the usual pause between searches."""
+        if self.source is None or self.source.kind != "window" or self._board_lost:
+            return
+        off = grid_misalignment(img)
+        if off is not None and off > MAX_GRID_OFFSET:
+            self.log.info("board no longer lined up (off by %.2f of a square): looking for it again", off)
+            self._board_lost = True
+            self._same_spot_finds, self._detect_backoff, self._last_detect = 0, 3.0, 0.0
 
     def _note_lost(self, lost: bool) -> None:
         if self.source is None or self.source.kind != "window":
@@ -634,7 +649,10 @@ class LiveSession(QObject):
         self.last_img = img
         profile = self.profile
         if profile is None:
-            self._learn_board(img, quiet=True)
+            if self._steady(img):
+                self._learn_board(img, quiet=True)
+            else:
+                self._recheck_soon()
             return
         rec = recognize(img, profile)
         self.last_rec = rec
@@ -643,6 +661,7 @@ class LiveSession(QObject):
         if plausibility(rec) is None:
             if self._relearn_if_start(img):
                 return
+            self._check_still_lined_up(img)
             self._mark_unsure()
             if self._absent_frames == 2 and self._debug_saved < AUTO_DEBUG_FRAMES and \
                     (not self._game_title or self.window_title == self._game_title):
@@ -711,6 +730,12 @@ class LiveSession(QObject):
         if TRACE:
             self.log.info("trace frame %s %s seen=%s board=%s", result.kind, " ".join(result.moves), placement,
                           self.tracker.board.board_fen())
+            if result.kind in ("pending", "invalid", "resync") and self._trace_frames < 300:
+                self._trace_frames += 1  # keep the screenshots the tracker couldn't explain, for diagnosis
+                folder = DEBUG_DIR.parent / "trace-frames"
+                folder.mkdir(exist_ok=True)
+                Image.fromarray(img).save(folder / f"{time.strftime('%H%M%S')}-{int(time.time() * 1000) % 1000:03d}"
+                                                   f"-{result.kind}.png")
         if result.kind in ("moves", "same"):
             self._note_lost(False)
         if result.kind == "moves":
@@ -1074,6 +1099,18 @@ class LiveSession(QObject):
             profile, white_bottom = calibrate(fresh)
             return profile, white_bottom, fresh
 
+    def _steady(self, img) -> bool:
+        """Whether the board looks the same as at the previous look (at least 0.2 s ago). Sites animate
+        the pieces at the start of a game (chess.com spins them into place); learning a board from such
+        a frame would make every piece unreadable afterwards, so boards are only learned when still."""
+        thumb = np.asarray(Image.fromarray(img).convert("L").resize((32, 32), Image.BOX), np.float32)
+        prev, prev_t = self._steady_thumb, self._steady_t
+        now = time.monotonic()
+        if prev is not None and now - prev_t < 0.2:
+            return False
+        self._steady_thumb, self._steady_t = thumb, now
+        return prev is not None and float(np.abs(thumb - prev).mean()) < 3.0
+
     def _relearn_if_start(self, img) -> bool:
         """A board we have a profile for, but can't read, that shows the starting position: its look
         changed, or the profile was learned from a bad screenshot. Learn it again (at most every 3 s)."""
@@ -1082,6 +1119,9 @@ class LiveSession(QObject):
         except GridError:
             pass            # the starting position, just not lined up: _learn_board finds the board again
         except CalibrationError:
+            return False
+        if not self._steady(img):
+            self._recheck_soon()   # still moving: look again in a moment
             return False
         if time.time() - self._last_relearn < 3.0:
             return False
@@ -1105,6 +1145,8 @@ class LiveSession(QObject):
             self._last_learn_kind = kind
             if kind in ("not_a_board", "grid"):
                 self._note_lost(True)  # it may have moved: look for it again
+            elif quiet:
+                self._check_still_lined_up(img)  # e.g. another tab with its board somewhere else
             if quiet:
                 if kind == BLANK:
                     self.set_status(message, "error")
